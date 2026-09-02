@@ -1,41 +1,112 @@
 # Bayesian voltage optimization
 
-The code is separated into pure optimization/waveform logic and VISA instrument I/O:
+This project runs a sequential, hardware-in-the-loop Bayesian optimization (BO) experiment. It programs an arbitrary waveform generator (ARB), acquires current, voltage, and sync traces from an oscilloscope, and minimizes measured electrical work while enforcing a final-charge constraint.
 
-- `bo.py`: Xopt constrained Expected Improvement following the reference notebook.
-- `waveform.py`: interpolates the protocol and appends its ramp-down and zero hold.
-- `instruments.py`: Agilent ARB upload and Infiniium acquisition.
-- `measurement.py`: applies one proposed voltage and returns a calibrated trace with `t=0` at the start of the BO protocol.
-- `storage.py`: saves every trace and the compact optimization history.
-- `config.py`: all user-editable settings.
-- `run_experiment.py`: the sequential experiment loop.
+## Experiment sequence
 
-Every physical waveform is:
+Each run performs:
 
-1. the interpolated BO voltage protocol, starting at the ARB period boundary,
-2. a gradual ramp from its final voltage to `0 V`,
-3. an adjustable slow negative neutralization pulse and return to `0 V`,
-4. an adjustable final `0 V` hold.
+1. one linear reference protocol from `linear_minimum_voltage_v` to `linear_maximum_voltage_v`;
+2. `initial_random_measurements` random protocols;
+3. `bo_steps` constrained Expected Improvement proposals from Xopt.
 
-ARB sync output is measured on oscilloscope channel 3. Its positive 0.5 V crossing defines protocol `t=0`. The ramp-down, negative neutralization pulse, and zero hold are excluded from the BO objective.
+The first measurement defines `Q_target`. BO minimizes `VI_integral = integral(V I dt)` while searching for protocols whose final capacitor charge is at least the configured lower bound. `q_lower_relative_tolerance` adjusts the BO search boundary; the saved `feasible` value always means `Q_tau >= Q_target`.
 
-The optimizer follows `BO_discretize_points_R1_R2_parallel_C.ipynb`: first measure a linear 10-point ramp, use its transferred charge as the lower charge bound, measure 30 random protocols, then use Xopt constrained Expected Improvement. It minimizes `integral(V*I dt)` subject to measured `Q_tau = integral(I dt)` remaining at or above the linear-ramp value.
+The uploaded ARB waveform contains the interpolated BO protocol, a ramp to zero, a negative neutralization pulse, a return to zero, and a final zero hold. Only the BO protocol interval contributes to the objective and charge calculation. The ARB sync output is acquired on the configured trigger channel; its positive threshold crossing defines protocol `t = 0`.
 
-Install `numpy`, `pandas`, `xopt`, and `pyvisa` plus the appropriate VISA backend, verify the two VISA addresses and gains in `config.py`, then run:
+## Hardware and software setup
+
+The instrument driver currently targets an Agilent-compatible ARB and Infiniium oscilloscope through VISA. The default scope channels are:
+
+- channel 1: current-amplifier output;
+- channel 2: device voltage;
+- channel 3: ARB sync/trigger output.
+
+Install the Python dependencies and a compatible VISA backend such as NI-VISA:
+
+```powershell
+python -m pip install numpy pandas packaging "xopt>=3.2.1" pyvisa matplotlib pillow
+```
+
+Pillow supports GIF output. MP4 output also requires FFmpeg on `PATH`.
+
+`run_in_xopt_env.ps1` is a convenience launcher for this lab computer. It uses the fixed interpreter `C:\Users\16502\.conda\envs\bto-xopt-latest\python.exe`. Edit `$python` for another machine or environment, or use the active environment directly.
+
+## Configure a run
+
+Edit `config.py` before connecting or energizing a device.
+
+### `InstrumentConfig`
+
+Set both VISA addresses, channel assignments, oscilloscope scales and offsets, trigger threshold, current-amplifier conversion (`current_gain_a_per_v`), termination correction, and voltage scaling. The current driver requires a 50-ohm scope input for the current channel.
+
+### `WaveformConfig`
+
+Check the protocol duration and control-point count, ARB sample rate, BO voltage bounds, reference-ramp bounds, ramp-down timing, neutralization pulse, and final zero hold.
+
+### `BOConfig`
+
+Set the random-measurement and BO-step counts, charge-bound tolerance, random seed behavior, and numerical optimizer limits. A run makes `1 + initial_random_measurements + bo_steps` measurements (131 with the current defaults).
+
+### `CircuitConfig`
+
+Choose a `circuit_type` and provide its matching parameters:
+
+- `series_rc`: `resistance_ohm` and `capacitance_f` (uncomment/add `resistance_ohm` in the current config);
+- `series_r1_parallel_r2_c`: `r1_ohm`, `r2_ohm`, and `capacitance_f`;
+- `arb_circuit`: no model parameters; analytical and simulated-current comparisons are skipped.
+
+The circuit selection affects how final capacitor charge is inferred from the measured trace, so it must match the physical setup.
+
+### `ExperimentConfig`
+
+Set `data_mother_path` to the desired output root. Also review `scope_time_step_s`, `scope_periods`, `output_on_wait_s`, and `enable_control_panel`.
+
+Each run creates `BO_<circuit-parameters>_<HHMM>/` beneath `data_mother_path`. It contains a timestamped configuration JSON, one trace CSV per evaluation, a compact BO history CSV, and, when rendering succeeds, an MP4 evolution video.
+
+## Run the experiment
+
+Before starting, verify voltage limits, generator load behavior, channel scaling and offsets, current-amplifier gain, 50-ohm termination, wiring, and the sync-trigger edge on an oscilloscope.
+
+Run with the active environment:
 
 ```powershell
 python run_experiment.py
 ```
 
-Before connecting a device, validate voltage limits, channel scaling, current-amplifier gain, instrument load setting, and trigger behavior on an oscilloscope.
-
-Create an evolution GIF from the latest timestamped run in the configured circuit folder:
+Or, after adapting its interpreter path:
 
 ```powershell
-python make_evolution_video.py
+.\run_in_xopt_env.ps1
 ```
 
-Or select a specific run with `python make_evolution_video.py --history <path-to-bo_history.csv>`.
+The generator output is enabled only during acquisition and disabled during cleanup. At completion, the program attempts to create an MP4 and leaves the live control-panel window open until it is closed. Set `enable_control_panel = False` for headless operation.
 
-To select a folder and automatically use its newest history file, run
-`python make_evolution_video.py --data-folder <folder-containing-the-CSVs>`.
+## Create an evolution video
+
+Use an exact history file:
+
+```powershell
+python make_evolution_video.py --history <path-to-bo_history.csv>
+```
+
+Or select the newest history in a run folder:
+
+```powershell
+python make_evolution_video.py --data-folder <folder-containing-run-CSVs>
+```
+
+Optional arguments are `--output <file.mp4|file.gif>` and `--fps <frames-per-second>`. With neither selection argument, the script uses the user-editable `DATA_FOLDER` near the top of `make_evolution_video.py`.
+
+## Code layout
+
+- `config.py` — experiment, hardware, waveform, circuit, and BO settings.
+- `run_experiment.py` — sequential experiment loop.
+- `waveform.py` — protocol interpolation and waveform-tail construction.
+- `instruments.py` — VISA communication with the ARB and oscilloscope.
+- `measurement.py` — acquisition, calibration, and protocol alignment.
+- `bo.py` — constrained Expected Improvement and trace metrics.
+- `circuits.py` — circuit-specific charge inference, simulation, and analytical references.
+- `storage.py` — configuration, trace, and history persistence.
+- `control_panel.py` — live plots during a run.
+- `make_evolution_video.py` — MP4/GIF rendering from saved data.
