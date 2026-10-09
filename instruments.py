@@ -39,6 +39,9 @@ class ArbGenerator:
             fg.write(f"FREQ {1.0 / waveform.duration_s:.12g}")
             fg.write(f"VOLT {vpp:.12g}")
             fg.write(f"VOLT:OFFS {offset:.12g}")
+            # Do not start acquisition until the generator has finished
+            # processing the uploaded waveform and every configuration command.
+            fg.query("*OPC?")
         finally:
             fg.close()
             # ResourceManager instances may share one VISA session. Closing it

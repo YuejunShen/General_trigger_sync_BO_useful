@@ -49,7 +49,7 @@ class InstrumentConfig:
 
 @dataclass(frozen=True)
 class WaveformConfig:
-    sample_rate_hz: float = 1e4
+    sample_rate_hz: float = 1e3
     protocol_duration_s: float = 0.1
     protocol_points: int = 10
     protocol_ramp_down_s: float = 0.1
@@ -57,7 +57,7 @@ class WaveformConfig:
     neutralization_fall_time_s: float = 0.100
     neutralization_hold_time_s: float = 0.100
     neutralization_rise_time_s: float = 0.1
-    final_zero_duration_s: float = 1
+    final_zero_duration_s: float = 0.2
     linear_minimum_voltage_v: float = 0.0
     linear_maximum_voltage_v: float = 1.0
     minimum_voltage_v: float = 0.0  # BO lower bound
@@ -72,7 +72,7 @@ class WaveformConfig:
 @dataclass(frozen=True)
 class BOConfig:
     initial_random_measurements: int = 30
-    bo_steps: int = 400
+    bo_steps: int = 300
     # Shifts the BO feasibility boundary relative to Q_TARGET (the first,
     # linear-protocol evaluation's Q_tau), as a fraction of |Q_TARGET|:
     # negative LOOSENS the bound (Q_tau may fall below Q_TARGET by that
@@ -143,7 +143,7 @@ class ExperimentConfig:
     )
     scope_time_step_s: float = 20e-6
     scope_periods: int = 2
-    output_on_wait_s: float = 1.5
+    output_on_wait_s: float = 0.1
     enable_control_panel: bool = True
     # Set by run_parameter_sweep.py so every swept run has a distinct,
     # self-documenting output folder. Empty for an ordinary single run.

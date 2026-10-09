@@ -14,7 +14,7 @@ from storage import RUN_LOG_PATH
 
 
 DISCRETIZATION_POINTS = [4, 6, 8, 10, 12, 14]
-REPEATS = 5
+REPEATS = 4
 SWEEP_NAME = "protocol_points_scan"
 
 
