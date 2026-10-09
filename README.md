@@ -38,7 +38,13 @@ Edit `config.py` before connecting or energizing a device.
 
 ### `InstrumentConfig`
 
-Set both VISA addresses, channel assignments, oscilloscope scales and offsets, trigger threshold, current-amplifier conversion (`current_gain_a_per_v`), termination correction, and voltage scaling. The current driver requires a 50-ohm scope input for the current channel.
+Set both VISA addresses, channel assignments, oscilloscope scales and offsets,
+trigger threshold, and voltage scaling. Set `use_current_amplifier = True` when
+channel 1 receives a current-amplifier output; current is then calculated as
+`V_scope * current_termination_correction * current_gain_a_per_v`. Set it to
+`False` when the circuit is connected directly to the scope's 50-ohm input;
+current is then calculated as `V_scope / current_input_impedance_ohm`. The
+current driver currently requires `current_input_impedance_ohm = 50.0`.
 
 ### `WaveformConfig`
 
@@ -60,7 +66,11 @@ The circuit selection affects how final capacitor charge is inferred from the me
 
 ### `ExperimentConfig`
 
-Set `data_mother_path` to the desired output root. Also review `scope_time_step_s`, `scope_periods`, `output_on_wait_s`, and `enable_control_panel`.
+By default, `data_mother_path` is created automatically as
+`D:\Ferroelectric_BTO_optimization\YYYYMMDD` using the run's start date. Override
+it in `config.py` only when a different output root is needed. Also review
+`scope_time_step_s`, `scope_periods`, `output_on_wait_s`, and
+`enable_control_panel`.
 
 Each run creates `BO_<circuit-parameters>_<HHMM>/` beneath `data_mother_path`. It contains a timestamped configuration JSON, one trace CSV per evaluation, a compact BO history CSV, and, when rendering succeeds, an MP4 evolution video.
 
@@ -73,6 +83,18 @@ Run with the active environment:
 ```powershell
 python run_experiment.py
 ```
+
+To sweep the number of protocol discretization points, edit
+`DISCRETIZATION_POINTS` and `REPEATS` near the top of
+`run_parameter_sweep.py`, then run:
+
+```powershell
+python run_parameter_sweep.py
+```
+
+Each setting uses an independent optimizer and output folder. The live panel's
+**Stop safely** button finishes the active measurement, closes the instrument
+sessions normally, and then ends either the single run or the entire sweep.
 
 Or, after adapting its interpreter path:
 

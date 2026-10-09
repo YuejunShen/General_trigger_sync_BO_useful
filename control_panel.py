@@ -11,9 +11,13 @@ class ControlPanel:
         self.objectives = []
         self.charges = []
         self.feasible = []
+        # Checked between complete measurements so instrument cleanup is never
+        # interrupted halfway through an acquisition.
+        self.stop_requested = False
         if not self.enabled:
             return
         import matplotlib.pyplot as plt
+        from matplotlib.widgets import Button
 
         self.plt = plt
         plt.ion()
@@ -21,7 +25,18 @@ class ControlPanel:
         self.ax_voltage, self.ax_current, self.ax_next, self.ax_history = axes.ravel()
         self.ax_charge = self.ax_history.twinx()
         self.figure.canvas.manager.set_window_title("Bayesian Voltage Optimization")
-        self.figure.tight_layout(pad=3.0)
+        self.figure.subplots_adjust(bottom=0.12)
+        self.figure.tight_layout(pad=3.0, rect=(0.0, 0.08, 1.0, 1.0))
+
+        stop_ax = self.figure.add_axes([0.4, 0.01, 0.2, 0.05])
+        self.stop_button = Button(stop_ax, "Stop safely", color="tab:red", hovercolor="0.9")
+        self.stop_button.on_clicked(self._on_stop_clicked)
+
+    def _on_stop_clicked(self, _event):
+        self.stop_requested = True
+        self.stop_button.label.set_text("Stopping after this\nmeasurement...")
+        self.stop_button.ax.set_facecolor("0.8")
+        self.figure.canvas.draw_idle()
 
     def show_next(self, control_voltages_v, status="Waiting for measurement"):
         if not self.enabled:
@@ -103,10 +118,16 @@ class ControlPanel:
                   f"feasible={result['feasible']}")
         self.show_next(next_voltages_v, status)
 
-    def finish(self):
+    def finish(self, block: bool = True):
+        """Finish the panel; sweep runs use block=False to continue unattended."""
         if not self.enabled:
             return
         self.figure.suptitle("Experiment complete - close this window to exit")
+        self.stop_button.label.set_text("Stop safely")
+        self.stop_button.ax.set_facecolor("0.85")
         self._refresh()
         self.plt.ioff()
-        self.plt.show()
+        if block:
+            self.plt.show()
+        else:
+            self.plt.close(self.figure)

@@ -2,12 +2,47 @@
 
 import csv
 import dataclasses
+import datetime as dt
 import json
+from pathlib import Path
 
 import numpy as np
 
 from config import ExperimentConfig
 from measurement import Measurement
+
+
+# Kept separate from the PUND run log because the two experiment types record
+# different parameter columns.
+RUN_LOG_PATH = Path(r"D:\Ferroelectric_BTO_optimization\general_run_log.csv")
+
+
+def append_run_log(cfg: ExperimentConfig, sweep_label: str = "",
+                   sweep_overrides: dict | None = None,
+                   repeat_index: int | None = None) -> None:
+    """Record one single or swept run and the discretization it used."""
+    RUN_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not RUN_LOG_PATH.exists()
+    with RUN_LOG_PATH.open("a", newline="") as handle:
+        writer = csv.writer(handle)
+        if new_file:
+            writer.writerow(["logged_at", "run_timestamp", "circuit_type",
+                             "protocol_points", "initial_random_measurements", "bo_steps",
+                             "q_lower_relative_tolerance", "sweep_label", "repeat_index",
+                             "sweep_overrides_json", "output_directory"])
+        writer.writerow([
+            dt.datetime.now().isoformat(timespec="seconds"),
+            cfg.run_timestamp,
+            cfg.circuit.circuit_type,
+            cfg.waveform.protocol_points,
+            cfg.bo.initial_random_measurements,
+            cfg.bo.bo_steps,
+            cfg.bo.q_lower_relative_tolerance,
+            sweep_label,
+            repeat_index if repeat_index is not None else "",
+            json.dumps(sweep_overrides or {}),
+            str(cfg.output_directory),
+        ])
 
 
 def save_run_config(cfg: ExperimentConfig) -> None:

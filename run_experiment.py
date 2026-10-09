@@ -1,16 +1,22 @@
-"""Sequential BO measurement loop. Edit config.py, then run this file."""
+"""Sequential BO measurement loop. Edit config.py, then run this file.
+
+Use run_parameter_sweep.py to compare multiple discretization-point counts.
+"""
 
 from bo import BayesianVoltageOptimizer
 from config import ExperimentConfig
 from control_panel import ControlPanel
 from make_evolution_video import default_output_path, make_video
 from measurement import apply_voltage_and_measure
-from storage import save_measurement, save_run_config
+from storage import append_run_log, save_measurement, save_run_config
 
 
-def main() -> None:
-    cfg = ExperimentConfig()
+def run_once(cfg: ExperimentConfig, sweep_label: str = "", sweep_overrides: dict | None = None,
+             repeat_index: int | None = None, block_on_finish: bool = True) -> bool:
+    """Run one experiment and return whether the safe-stop button was used."""
     save_run_config(cfg)
+    append_run_log(cfg, sweep_label=sweep_label, sweep_overrides=sweep_overrides,
+                   repeat_index=repeat_index)
     optimizer = BayesianVoltageOptimizer(cfg.waveform, cfg.bo, cfg.circuit)
     panel = ControlPanel(cfg)
     proposed_voltage = optimizer.propose()
@@ -30,13 +36,22 @@ def main() -> None:
         proposed_voltage = optimizer.propose()
         panel.update(measurement, result, proposed_voltage, iteration)
 
+        if panel.stop_requested:
+            print(f"Stop requested -- finishing cleanly after iteration {iteration}.")
+            break
+
     try:
         video_path = make_video(cfg.history_file, default_output_path(cfg.history_file))
         print(f"Evolution video saved to {video_path}")
     except Exception as exc:
         print(f"Could not generate evolution video: {exc}")
 
-    panel.finish()
+    panel.finish(block=block_on_finish)
+    return panel.stop_requested
+
+
+def main() -> None:
+    run_once(ExperimentConfig())
 
 
 if __name__ == "__main__":

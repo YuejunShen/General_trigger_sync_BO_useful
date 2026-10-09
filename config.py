@@ -15,6 +15,10 @@ class InstrumentConfig:
     current_channel: int = 1
     voltage_channel: int = 2
     trigger_channel: int = 3
+    # True: channel 1 measures a current-amplifier output, so convert using
+    # current_gain_a_per_v and current_termination_correction. False: channel 1
+    # is connected directly across the scope's 50-ohm input and I = V_scope/R.
+    use_current_amplifier: bool = True
     current_gain_a_per_v: float = 1e-4
     current_input_impedance_ohm: float = 50.0
     current_termination_correction: float = 2.0
@@ -27,11 +31,26 @@ class InstrumentConfig:
     trigger_offset_v: float = 0.0
     trigger_level_v: float = 0.5
 
+    def __post_init__(self):
+        if self.current_input_impedance_ohm <= 0.0:
+            raise ValueError("current_input_impedance_ohm must be positive")
+        if self.current_gain_a_per_v <= 0.0:
+            raise ValueError("current_gain_a_per_v must be positive")
+        if self.current_termination_correction <= 0.0:
+            raise ValueError("current_termination_correction must be positive")
+
+    @property
+    def effective_current_gain_a_per_v(self) -> float:
+        """Conversion from the scope's measured volts to current in amperes."""
+        if self.use_current_amplifier:
+            return self.current_termination_correction * self.current_gain_a_per_v
+        return 1.0 / self.current_input_impedance_ohm
+
 
 @dataclass(frozen=True)
 class WaveformConfig:
     sample_rate_hz: float = 1e4
-    protocol_duration_s: float = 0.2
+    protocol_duration_s: float = 0.1
     protocol_points: int = 10
     protocol_ramp_down_s: float = 0.1
     neutralization_voltage_v: float = -1
@@ -45,11 +64,15 @@ class WaveformConfig:
     maximum_voltage_v: float = 1.3
     maximum_arb_points: int = 1_000_000
 
+    def __post_init__(self):
+        if self.protocol_points < 2:
+            raise ValueError("protocol_points must be at least 2")
+
 
 @dataclass(frozen=True)
 class BOConfig:
     initial_random_measurements: int = 30
-    bo_steps: int = 100 
+    bo_steps: int = 400
     # Shifts the BO feasibility boundary relative to Q_TARGET (the first,
     # linear-protocol evaluation's Q_tau), as a fraction of |Q_TARGET|:
     # negative LOOSENS the bound (Q_tau may fall below Q_TARGET by that
@@ -75,8 +98,8 @@ class CircuitConfig:
     # to simulate or solve analytically for it, so make_evolution_video.py and
     # ControlPanel simply skip the simulated-current/analytical-protocol
     # comparisons and fall back to the measured trace alone.
-    circuit_type: str = "series_r1_parallel_r2_c"
-    # resistance_ohm: float = 10e3           # series_rc
+    circuit_type: str = "series_rc"
+    resistance_ohm: float = 10e3             # series_rc
     capacitance_f: float = 10e-6           # series_rc, series_r1_parallel_r2_c
     r1_ohm: float = 10e3                   # series_r1_parallel_r2_c
     r2_ohm: float = 10e3                   # series_r1_parallel_r2_c
@@ -114,17 +137,24 @@ class ExperimentConfig:
     run_timestamp: str = field(
         default_factory=lambda: dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     )
-    data_mother_path: Path = Path(r"D:\Ferroelectric_BTO_optimization\20260806")
+    data_mother_path: Path = field(
+        default_factory=lambda: Path(r"D:\Ferroelectric_BTO_optimization")
+        / dt.datetime.now().strftime("%Y%m%d")
+    )
     scope_time_step_s: float = 20e-6
     scope_periods: int = 2
     output_on_wait_s: float = 1.5
     enable_control_panel: bool = True
+    # Set by run_parameter_sweep.py so every swept run has a distinct,
+    # self-documenting output folder. Empty for an ordinary single run.
+    sweep_tag: str = ""
 
     @property
     def output_directory(self) -> Path:
         # HHMM from run_timestamp so repeat runs (same circuit, same day) get their own folder.
         time_of_day = self.run_timestamp.split("_")[1][:4]
-        return self.data_mother_path / f"BO_{self.circuit.folder_label}_{time_of_day}"
+        suffix = f"_{self.sweep_tag}" if self.sweep_tag else ""
+        return self.data_mother_path / f"BO_{self.circuit.folder_label}_{time_of_day}{suffix}"
 
     @property
     def history_file(self) -> Path:

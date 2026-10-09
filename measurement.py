@@ -42,8 +42,9 @@ def apply_voltage_and_measure(control_voltages_v: np.ndarray, cfg: ExperimentCon
 
     if not (time_i.size == time_v.size == time_trigger.size):
         raise RuntimeError("Scope returned unequal current, voltage, and trigger lengths")
-    current = (raw_i * cfg.instruments.current_termination_correction
-               * cfg.instruments.current_gain_a_per_v)
+    # Amplifier mode applies its A/V gain and termination correction. Direct
+    # mode uses Ohm's law for the voltage measured across the 50-ohm input.
+    current = raw_i * cfg.instruments.effective_current_gain_a_per_v
     voltage = raw_v * cfg.instruments.voltage_scale_factor
     # Locate the measured positive trigger-out edge; it is protocol t=0.
     level = cfg.instruments.trigger_level_v
