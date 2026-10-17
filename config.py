@@ -51,13 +51,20 @@ class InstrumentConfig:
 class WaveformConfig:
     sample_rate_hz: float = 1e3
     protocol_duration_s: float = 0.1
-    protocol_points: int = 10
+    protocol_points: int = 14
+    # How the protocol_points BO variables define V(t) over the protocol:
+    # "points"    -- voltages at evenly spaced times, linearly interpolated.
+    # "bernstein" -- coefficients of a degree (protocol_points - 1) Bernstein
+    #                polynomial. V(t) always stays between the smallest and
+    #                largest coefficient, so the BO voltage bounds hold without
+    #                clipping; V(0) is the first and V(end) the last coefficient.
+    protocol_basis: str = "bernstein"
     protocol_ramp_down_s: float = 0.1
     neutralization_voltage_v: float = -1
-    neutralization_fall_time_s: float = 0.100
-    neutralization_hold_time_s: float = 0.100
+    neutralization_fall_time_s: float = 0.1
+    neutralization_hold_time_s: float = 0.1
     neutralization_rise_time_s: float = 0.1
-    final_zero_duration_s: float = 0.2
+    final_zero_duration_s: float = 1
     linear_minimum_voltage_v: float = 0.0
     linear_maximum_voltage_v: float = 1.0
     minimum_voltage_v: float = 0.0  # BO lower bound
@@ -67,6 +74,13 @@ class WaveformConfig:
     def __post_init__(self):
         if self.protocol_points < 2:
             raise ValueError("protocol_points must be at least 2")
+        if self.protocol_basis not in ("points", "bernstein"):
+            raise ValueError(f"Unknown protocol_basis {self.protocol_basis!r}")
+
+    @property
+    def protocol_label(self) -> str:
+        """Short tag such as "points10" or "bernstein10" for folder names."""
+        return f"{self.protocol_basis}{self.protocol_points}"
 
 
 @dataclass(frozen=True)
@@ -79,7 +93,7 @@ class BOConfig:
     # fraction and still be searched as feasible), positive TIGHTENS it,
     # 0.0 means the search boundary sits exactly at Q_TARGET. Does not
     # affect the "feasible" column, which always reports Q_tau >= Q_TARGET.
-    q_lower_relative_tolerance: float = 1e-3
+    q_lower_relative_tolerance: float = 4e-3
     random_seed: int = field(default_factory=lambda: time.time_ns() % (2**32))
     n_restarts: int = 5
     max_iter: int = 100
@@ -146,15 +160,16 @@ class ExperimentConfig:
     output_on_wait_s: float = 0.1
     enable_control_panel: bool = True
     # Set by run_parameter_sweep.py so every swept run has a distinct,
-    # self-documenting output folder. Empty for an ordinary single run.
+    # self-documenting output folder. Empty for an ordinary single run, which
+    # is then tagged with waveform.protocol_label instead.
     sweep_tag: str = ""
 
     @property
     def output_directory(self) -> Path:
         # HHMM from run_timestamp so repeat runs (same circuit, same day) get their own folder.
         time_of_day = self.run_timestamp.split("_")[1][:4]
-        suffix = f"_{self.sweep_tag}" if self.sweep_tag else ""
-        return self.data_mother_path / f"BO_{self.circuit.folder_label}_{time_of_day}{suffix}"
+        suffix = self.sweep_tag or self.waveform.protocol_label
+        return self.data_mother_path / f"BO_{self.circuit.folder_label}_{time_of_day}_{suffix}"
 
     @property
     def history_file(self) -> Path:

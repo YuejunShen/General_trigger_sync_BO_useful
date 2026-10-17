@@ -50,6 +50,11 @@ current driver currently requires `current_input_impedance_ohm = 50.0`.
 
 Check the protocol duration and control-point count, ARB sample rate, BO voltage bounds, reference-ramp bounds, ramp-down timing, neutralization pulse, and final zero hold.
 
+`protocol_basis` chooses how the `protocol_points` BO variables define the protocol:
+
+- `"points"` (default): voltages at evenly spaced times, linearly interpolated.
+- `"bernstein"`: coefficients of a degree `protocol_points - 1` Bernstein polynomial. The waveform is smooth and always stays between its smallest and largest coefficient, so the BO voltage bounds hold without clipping. `V(0)` equals the first coefficient and `V(end)` the last. Evenly spaced coefficients give a straight line, so the linear reference protocol is unchanged.
+
 ### `BOConfig`
 
 Set the random-measurement and BO-step counts, charge-bound tolerance, random seed behavior, and numerical optimizer limits. A run makes `1 + initial_random_measurements + bo_steps` measurements (131 with the current defaults).
@@ -72,7 +77,7 @@ it in `config.py` only when a different output root is needed. Also review
 `scope_time_step_s`, `scope_periods`, `output_on_wait_s`, and
 `enable_control_panel`.
 
-Each run creates `BO_<circuit-parameters>_<HHMM>/` beneath `data_mother_path`. It contains a timestamped configuration JSON, one trace CSV per evaluation, a compact BO history CSV, and, when rendering succeeds, an MP4 evolution video.
+Each run creates `BO_<circuit-parameters>_<HHMM>_<basis><points>/` (for example `BO_R=10000_C=1e-05_1458_bernstein10`) beneath `data_mother_path`. It contains a timestamped configuration JSON, one trace CSV per evaluation, a compact BO history CSV, and, when rendering succeeds, an MP4 evolution video.
 
 ## Run the experiment
 
@@ -85,14 +90,18 @@ python run_experiment.py
 ```
 
 To sweep the number of protocol discretization points, edit
-`DISCRETIZATION_POINTS` and `REPEATS` near the top of
+`PROTOCOL_BASES`, `DISCRETIZATION_POINTS` and `REPEATS` near the top of
 `run_parameter_sweep.py`, then run:
 
 ```powershell
 python run_parameter_sweep.py
 ```
 
-Each setting uses an independent optimizer and output folder. The live panel's
+Each setting uses an independent optimizer and output folder. Runs are stored
+as `<SWEEP_NAME>/<basis>/BO_<circuit>_<HHMM>_<basis><points>_rep<n>/`, and
+the convergence plot in `<SWEEP_NAME>/` draws one line per basis. The run log
+(`general_run_log.csv`) records `protocol_basis` for every run; an older log is
+upgraded automatically, with existing rows marked `points`. The live panel's
 **Stop safely** button finishes the active measurement, closes the instrument
 sessions normally, and then ends either the single run or the entire sweep.
 

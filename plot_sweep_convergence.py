@@ -25,9 +25,14 @@ def work_ratio_for_run(output_directory: Path) -> float | None:
 
 def plot_convergence(run_log_path: Path, sweep_folder: Path) -> Path:
     log = pd.read_csv(run_log_path)
+    if "protocol_basis" not in log:
+        log["protocol_basis"] = "points"
+    log["protocol_basis"] = log["protocol_basis"].fillna("points")
     resolved_folder = Path(sweep_folder).resolve()
+    # Run folders sit directly in the sweep folder (older sweeps) or in a
+    # per-basis subfolder of it.
     log = log[log["output_directory"].apply(
-        lambda value: Path(value).resolve().parent == resolved_folder
+        lambda value: resolved_folder in Path(value).resolve().parents
     )]
     if log.empty:
         raise ValueError("No matching completed runs in the run log")
@@ -38,16 +43,17 @@ def plot_convergence(run_log_path: Path, sweep_folder: Path) -> Path:
     if log.empty:
         raise ValueError("No matching runs contain feasible history data")
 
-    grouped = log.groupby("protocol_points")["work_ratio"]
-    x = grouped.mean().index.to_numpy(float)
-    means = grouped.mean().to_numpy(float)
-    stds = grouped.std(ddof=0).fillna(0.0).to_numpy(float)
-    order = np.argsort(x)
-
     figure, axis = plt.subplots(figsize=(7, 5))
-    axis.errorbar(x[order], means[order], yerr=stds[order], marker="o", capsize=4)
+    for basis, basis_log in log.groupby("protocol_basis"):
+        grouped = basis_log.groupby("protocol_points")["work_ratio"]
+        x = grouped.mean().index.to_numpy(float)
+        means = grouped.mean().to_numpy(float)
+        stds = grouped.std(ddof=0).fillna(0.0).to_numpy(float)
+        order = np.argsort(x)
+        axis.errorbar(x[order], means[order], yerr=stds[order], marker="o", capsize=4,
+                      label=f"{basis} basis")
     axis.axhline(1.0, color="0.6", linestyle="--", label="linear-protocol baseline")
-    axis.set(xlabel="Number of protocol discretization points",
+    axis.set(xlabel="Number of protocol parameters (points or Bernstein coefficients)",
              ylabel="Best feasible work / linear-protocol work",
              title="BO convergence vs. protocol discretization")
     axis.grid(True, alpha=0.3)

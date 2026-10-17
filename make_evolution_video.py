@@ -12,6 +12,7 @@ from matplotlib.lines import Line2D
 
 import circuits
 from config import ExperimentConfig
+from waveform import protocol_voltage
 
 
 # User-editable folder containing bo_history_*.csv and trace_*.csv files.
@@ -96,6 +97,9 @@ def make_video(history_path: Path, output_path: Path, fps: int = 6) -> Path:
     reference_current = reference_trace["current_a"].to_numpy(float)
 
     run_config = load_run_config(history_path)
+    # Runs logged before protocol_basis existed always used "points".
+    basis = run_config["waveform"].get("protocol_basis", "points") if run_config else "points"
+    control_label = "Bernstein coefficients" if basis == "bernstein" else "control points"
     circuit_type = None
     circuit_params = None
     q_initial = 0.0
@@ -173,7 +177,10 @@ def make_video(history_path: Path, output_path: Path, fps: int = 6) -> Path:
             ax_v.plot(reference_time, analytical_v, color="tab:purple", linestyle="--", linewidth=1.8,
                       label="analytical optimal V(t)")
         ax_v.plot(time_s, voltage_v, color="tab:blue", linewidth=2, label="measured V(t)")
-        ax_v.scatter(control_t, controls, color="tab:blue", s=24, zorder=4)
+        commanded_v = protocol_voltage(controls, (time_s - time_s[0]) / (time_s[-1] - time_s[0]), basis)
+        ax_v.plot(time_s, commanded_v, color="tab:cyan", linestyle=":", linewidth=1.5,
+                  label=f"commanded V(t) ({basis})")
+        ax_v.scatter(control_t, controls, color="tab:blue", s=24, zorder=4, label=control_label)
         ax_v.set(title="Voltage protocol", xlabel="Protocol time (s)", ylabel="Voltage (V)")
         ax_v.grid(True, alpha=0.3)
         ax_v.legend(loc="upper left", fontsize=8)

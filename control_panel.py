@@ -2,6 +2,7 @@
 
 import numpy as np
 from circuits import simulate_circuit
+from waveform import protocol_voltage
 
 
 class ControlPanel:
@@ -44,11 +45,13 @@ class ControlPanel:
         duration = self.cfg.waveform.protocol_duration_s
         control_t = np.linspace(0.0, duration, len(control_voltages_v))
         dense_t = np.linspace(0.0, duration, 1000)
-        dense_v = np.interp(dense_t, control_t, control_voltages_v)
+        basis = self.cfg.waveform.protocol_basis
+        dense_v = protocol_voltage(control_voltages_v, dense_t / duration, basis)
         self.ax_next.clear()
         self.ax_next.plot(dense_t, dense_v, color="tab:orange", linewidth=2)
         self.ax_next.scatter(control_t, control_voltages_v, color="tab:red", zorder=3)
-        self.ax_next.set(title="Next BO voltage choice", xlabel="Protocol time (s)", ylabel="Voltage (V)")
+        self.ax_next.set(title=f"Next BO voltage choice ({self.cfg.waveform.protocol_label})",
+                         xlabel="Protocol time (s)", ylabel="Voltage (V)")
         self.ax_next.set_xlim(0.0, duration)
         self.ax_next.grid(True, alpha=0.3)
         self.figure.suptitle(status)

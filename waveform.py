@@ -1,6 +1,7 @@
 """Pure functions for constructing the physical ARB waveform."""
 
 from dataclasses import dataclass
+import math
 
 import numpy as np
 
@@ -30,6 +31,26 @@ def _ramp(start: float, stop: float, duration_s: float, sample_rate_hz: float) -
     return np.linspace(start, stop, count, endpoint=False, dtype=float)
 
 
+def protocol_voltage(controls: np.ndarray, normalized_t: np.ndarray, basis: str) -> np.ndarray:
+    """Evaluate the protocol V at normalized times in [0, 1] from BO controls.
+
+    "points": controls are voltages at evenly spaced times, linearly
+    interpolated. "bernstein": controls are Bernstein coefficients c_k, so
+    V(s) = sum_k c_k * C(n, k) * s^k * (1 - s)^(n - k) with n = len(c) - 1.
+    """
+    controls = np.asarray(controls, dtype=float)
+    s = np.clip(np.asarray(normalized_t, dtype=float), 0.0, 1.0)
+    if basis == "points":
+        return np.interp(s, np.linspace(0.0, 1.0, controls.size), controls)
+    if basis == "bernstein":
+        degree = controls.size - 1
+        k = np.arange(degree + 1)
+        binomial = np.array([math.comb(degree, i) for i in k], dtype=float)
+        terms = binomial * s[..., None] ** k * (1.0 - s[..., None]) ** (degree - k)
+        return terms @ controls
+    raise ValueError(f"Unknown protocol basis {basis!r}")
+
+
 def build_arb_waveform(control_voltages_v: np.ndarray, cfg: WaveformConfig) -> ArbWaveform:
     """Build the BO protocol followed by a gradual ramp-down and zero hold."""
     controls = np.asarray(control_voltages_v, dtype=float)
@@ -51,8 +72,7 @@ def build_arb_waveform(control_voltages_v: np.ndarray, cfg: WaveformConfig) -> A
 
     protocol_count = max(2, int(round(cfg.protocol_duration_s * cfg.sample_rate_hz)))
     sample_t = np.arange(protocol_count) / cfg.sample_rate_hz
-    control_t = np.linspace(sample_t[0], sample_t[-1], cfg.protocol_points)
-    protocol = np.interp(sample_t, control_t, controls)
+    protocol = protocol_voltage(controls, sample_t / sample_t[-1], cfg.protocol_basis)
     protocol_ramp_down = _ramp(
         controls[-1], 0.0, cfg.protocol_ramp_down_s, cfg.sample_rate_hz
     )
